@@ -24,12 +24,24 @@ for i in range(CNT):
 model = Sequential()
 model.add(Dense(100, input_shape=(INPUT,)))
 model.add(LeakyReLU())
+model.add(Dense(100, activation="relu"))
+
 model.add(Dense(1))
 
 model.compile(loss='mse', optimizer=SGD())
 
-model.fit(X, Y, validation_split=.2, epochs=10)
+model.fit(X, Y, validation_split=.2, epochs=60)
+
+X_pred = np.arange(INPUT) / CNT * 2 * math.pi
+Y_pred = np.sin(X_pred)
+
+X_l = list(X_pred)
+Y_l = list(Y_pred)
+for i in range(10000):
+    Y_new = model.predict(np.array(Y_l[-INPUT:]).reshape(1, -1))
+    Y_l.append(Y_new)
+    X_l.append(X_l[-1] + 1/CNT*2*math.pi)
 
 
-plt.plot(X_pre, Y_pre)
+plt.plot(X_l, Y_l)
 plt.show()
