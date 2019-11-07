@@ -54,6 +54,12 @@ def label_to_id(label):
     elif label == "silence":
         return len(target_list)+1
 
+def shuffle(*arrays):
+    state = np.random.get_state()
+    for array in arrays:
+        np.random.set_state(state)
+        np.random.shuffle(array)
+
 
 def load_data_from_wavs():
 
@@ -158,6 +164,8 @@ except:
     np.save(xfftfile, X_fft)
 
 
+shuffle(X, X_fft, Y)
+
 # Parameters
 lr = 0.001
 generations = 20000
@@ -203,7 +211,7 @@ x_fft = layers.MaxPooling1D(2)(x_fft)
 x_fft = layers.Dropout(drop_out_rate)(x_fft)
 x_fft = layers.Flatten()(x_fft)
 
-#x = keras.layers.Concatenate()([x, x_fft])
+x = keras.layers.Concatenate()([x, x_fft])
 
 x = layers.Dense(256, activation='relu')(x)
 x = layers.Dropout(drop_out_rate)(x)
@@ -211,7 +219,7 @@ x = layers.Dense(128, activation='relu')(x)
 x = layers.Dropout(drop_out_rate)(x)
 output_tensor = layers.Dense(OUTPUTS, activation='softmax')(x)
 
-model = tf.keras.Model(inputs=[input_x, #input_xfft
+model = tf.keras.Model(inputs=[input_x, input_xfft
                                ], outputs=[output_tensor,])
 
 model.compile(loss=keras.losses.categorical_crossentropy,
@@ -222,7 +230,7 @@ model.compile(loss=keras.losses.categorical_crossentropy,
 model.summary()
 
 
-history = model.fit([X, #X_fft
+history = model.fit([X, X_fft
                       ], Y,
                     validation_split=VALID_SPLIT,
                     batch_size=batch_size,
