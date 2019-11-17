@@ -1,35 +1,19 @@
 # path
 import os
 from os.path import isdir, join
-from pathlib import Path
-import gc
-
-# Scientific Math
 import numpy as np
-from scipy.fftpack import fft
-from scipy import signal
-from scipy.io import wavfile
-from sklearn.model_selection import train_test_split
-
-# Visualization
 import matplotlib.pyplot as plt
 import tensorflow as tf
-import plotly.offline as py
-import plotly.graph_objs as go
-
-# Deep learning
 import tensorflow.keras as keras
-from tensorflow.keras.layers import Dense, Dropout, Flatten
 from tensorflow.keras import Input, layers
-from tensorflow.keras import backend as K
 from guppy import hpy
-h = hpy()
-
 import random
 import copy
 import librosa
 import time
+import math
 
+h = hpy()
 
 train_audio_path = 'train/train/audio/'
 target_list = ['yes', 'no', 'up', 'down', 'left', 'right', 'on', 'off', 'stop', 'go']
@@ -38,6 +22,7 @@ OUTPUTS = len(target_list) + 2
 
 INPUT_SAMPLES = 8192
 FFT_SHAPE = INPUT_SAMPLES // 2 + 1
+DHT_SHAPE = INPUT_SAMPLES
 NOISE_MULTIPLIER = 1 # How many noised copies should we make
 UNKNOWN_COUNT = 2000 * (NOISE_MULTIPLIER + 1)
 SILENCE_COUNT = 2000 * (NOISE_MULTIPLIER + 1)
@@ -59,6 +44,31 @@ def shuffle(*arrays):
     for array in arrays:
         np.random.set_state(state)
         np.random.shuffle(array)
+
+DHT_MTX = None
+def dht(array):
+    global DHT_MTX
+    if DHT_MTX is None:
+        N = len(array)
+        ts = np.arange(N) / N
+        fs = np.arange(N)
+        args = np.outer(ts, fs)
+        DHT_MTX = np.cos(2 * math.pi * args) + np.sin(2 * math.pi * args)
+    return np.dot(DHT_MTX, array)
+
+def generate_convolution(size):
+    input = Input(shape=(size, 1))
+    x = layers.Conv1D(8, 11, padding='valid', activation='relu', strides='1')(input)
+    x = layers.MaxPooling1D(2)(x)
+    x = layers.Dropout(drop_out_rate)(x)
+    x = layers.Conv1D(16, 7, padding='valid', activation='relu', strides='1')(x)
+    x = layers.MaxPooling1D(2)(x)
+    x = layers.Dropout(drop_out_rate)(x)
+    x = layers.Conv1D(32, 5, padding='valid', activation='relu', strides='1')(x)
+    x = layers.MaxPooling1D(2)(x)
+    x = layers.Dropout(drop_out_rate)(x)
+    x = layers.Flatten()(x)
+    return input, x
 
 
 def load_data_from_wavs():
@@ -112,6 +122,7 @@ def load_data_from_wavs():
     cnt = len(wavs) * (NOISE_MULTIPLIER + 1) + UNKNOWN_COUNT + SILENCE_COUNT
     X = np.zeros((cnt, INPUT_SAMPLES), dtype="float32")
     X_fft = np.zeros((cnt, FFT_SHAPE), dtype="float32")
+    X_dht = np.zeros((cnt, DHT_SHAPE), dtype="float32")
     Y = np.zeros((cnt, 1), dtype="int32")
 
     def get_one_noise():
@@ -144,27 +155,33 @@ def load_data_from_wavs():
 
     for i in range(cnt):
         X_fft[i] = np.abs(np.fft.rfft(X[i]))
+        #X_dht[i] = dht(X[i])
+
+
 
     print(h.heap())
-    return X, X_fft, Y
+    return X, X_fft, X_dht, Y
 
 
 xfile = "x.npy"
 xfftfile = "xfft.npy"
+xdhtfile = "xdht.npy"
 yfile = "y.npy"
 try:
     X = np.load(xfile)
     X_fft = np.load(xfftfile)
+    X_dht = np.load(xdhtfile)
     Y = np.load(yfile)
     print("Loading arrays from file")
 except:
-    X, X_fft, Y = load_data_from_wavs()
+    X, X_fft, X_dht, Y = load_data_from_wavs()
     np.save(xfile, X)
     np.save(yfile, Y)
+    np.save(xdhtfile, X_dht)
     np.save(xfftfile, X_fft)
 
 
-shuffle(X, X_fft, Y)
+shuffle(X, X_fft, X_dht, Y)
 
 # Parameters
 lr = 0.001
@@ -175,6 +192,7 @@ drop_out_rate = 0.5
 # For Conv1D add Channel
 X = X.reshape((-1, INPUT_SAMPLES, 1))
 X_fft = X_fft.reshape((-1, FFT_SHAPE, 1))
+X_dht = X_dht.reshape((-1, DHT_SHAPE, 1))
 
 
 # Make Label data 'class num' -> 'One hot vector'
@@ -199,17 +217,7 @@ x = layers.Conv1D(128, 3, padding='valid', activation='relu', strides=1)(x)
 x = layers.MaxPooling1D(2)(x)
 x = layers.Flatten()(x)
 
-input_xfft = Input(shape=(FFT_SHAPE, 1))
-x_fft = layers.Conv1D(8, 11, padding='valid', activation='relu', strides='1')(input_xfft)
-x_fft = layers.MaxPooling1D(2)(x_fft)
-x_fft = layers.Dropout(drop_out_rate)(x_fft)
-x_fft = layers.Conv1D(16, 7, padding='valid', activation='relu', strides='1')(x_fft)
-x_fft = layers.MaxPooling1D(2)(x_fft)
-x_fft = layers.Dropout(drop_out_rate)(x_fft)
-x_fft = layers.Conv1D(32, 5, padding='valid', activation='relu', strides='1')(x_fft)
-x_fft = layers.MaxPooling1D(2)(x_fft)
-x_fft = layers.Dropout(drop_out_rate)(x_fft)
-x_fft = layers.Flatten()(x_fft)
+input_xfft, x_fft = generate_convolution(DHT_SHAPE)
 
 x = keras.layers.Concatenate()([x, x_fft])
 
@@ -230,7 +238,7 @@ model.compile(loss=keras.losses.categorical_crossentropy,
 model.summary()
 
 
-history = model.fit([X, X_fft
+history = model.fit([X, X_dht
                       ], Y,
                     validation_split=VALID_SPLIT,
                     batch_size=batch_size,
