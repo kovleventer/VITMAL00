@@ -12,17 +12,17 @@ import copy
 import librosa
 import time
 import math
-
+import sys
 h = hpy()
 
-train_audio_path = 'train/train/audio/'
-target_list = ['yes', 'no', 'up', 'down', 'left', 'right', 'on', 'off', 'stop', 'go']
 
-OUTPUTS = len(target_list) + 2
+
+TRAIN_AUDIO_PATH = 'train/train/audio/'
+TARGET_LIST = ['yes', 'no', 'up', 'down', 'left', 'right', 'on', 'off', 'stop', 'go']
+
+OUTPUTS = len(TARGET_LIST) + 2
 
 INPUT_SAMPLES = 8192
-FFT_SHAPE = INPUT_SAMPLES // 2 + 1
-DHT_SHAPE = INPUT_SAMPLES
 NOISE_MULTIPLIER = 1 # How many noised copies should we make
 UNKNOWN_COUNT = 2000 * (NOISE_MULTIPLIER + 1)
 SILENCE_COUNT = 2000 * (NOISE_MULTIPLIER + 1)
@@ -30,14 +30,53 @@ NOISE_RATIO = .2
 
 VALID_SPLIT = .2
 
+LEARNING_RATE = 0.001
+BATCH_SIZE = 256
+EPOCHS = 100
+DROPOUT_RATE = 0.5
+
+class Transform:
+    def __init__(self, name, filename, size):
+        self.name = name
+        self.filename = filename
+        self.size = size
+
+    def calc(self, array):
+        pass
+
+class FFT(Transform):
+    def __init__(self):
+        Transform.__init__(self, "fft", "xfft.npy", INPUT_SAMPLES // 2 + 1)
+
+    def calc(self, array):
+        return np.abs(np.fft.rfft(array))
+
+class DHT(Transform):
+    def __init__(self):
+        Transform.__init__(self, "dht", "xdht.npy", INPUT_SAMPLES)
+
+    DHT_MTX = None
+    def calc(self, array):
+        if DHT.DHT_MTX is None:
+            N = len(array)
+            ts = np.arange(N) / N
+            fs = np.arange(N)
+            args = np.outer(ts, fs)
+            DHT.DHT_MTX = np.cos(2 * math.pi * args) + np.sin(2 * math.pi * args)
+        return np.dot(DHT.DHT_MTX, array)
+
+
+transforms = [FFT(), DHT()]
+
+
 
 def label_to_id(label):
-    if label in target_list:
-        return target_list.index(label)
+    if label in TARGET_LIST:
+        return TARGET_LIST.index(label)
     elif label == "unknown":
-        return len(target_list)
+        return len(TARGET_LIST)
     elif label == "silence":
-        return len(target_list)+1
+        return len(TARGET_LIST) + 1
 
 def shuffle(*arrays):
     state = np.random.get_state()
@@ -45,50 +84,38 @@ def shuffle(*arrays):
         np.random.set_state(state)
         np.random.shuffle(array)
 
-DHT_MTX = None
-def dht(array):
-    global DHT_MTX
-    if DHT_MTX is None:
-        N = len(array)
-        ts = np.arange(N) / N
-        fs = np.arange(N)
-        args = np.outer(ts, fs)
-        DHT_MTX = np.cos(2 * math.pi * args) + np.sin(2 * math.pi * args)
-    return np.dot(DHT_MTX, array)
-
 def generate_convolution(size):
     input = Input(shape=(size, 1))
     x = layers.Conv1D(8, 11, padding='valid', activation='relu', strides='1')(input)
     x = layers.MaxPooling1D(2)(x)
-    x = layers.Dropout(drop_out_rate)(x)
+    x = layers.Dropout(DROPOUT_RATE)(x)
     x = layers.Conv1D(16, 7, padding='valid', activation='relu', strides='1')(x)
     x = layers.MaxPooling1D(2)(x)
-    x = layers.Dropout(drop_out_rate)(x)
+    x = layers.Dropout(DROPOUT_RATE)(x)
     x = layers.Conv1D(32, 5, padding='valid', activation='relu', strides='1')(x)
     x = layers.MaxPooling1D(2)(x)
-    x = layers.Dropout(drop_out_rate)(x)
+    x = layers.Dropout(DROPOUT_RATE)(x)
     x = layers.Flatten()(x)
     return input, x
 
+def load_data_from_wavs(transforms):
 
-def load_data_from_wavs():
-
-    background = [f for f in os.listdir(join(train_audio_path, '_background_noise_')) if f.endswith('.wav')]
+    background = [f for f in os.listdir(join(TRAIN_AUDIO_PATH, '_background_noise_')) if f.endswith('.wav')]
     background_noise = []
     for wav in background:
-        samples, sample_rate = librosa.load(join(join(train_audio_path, '_background_noise_'), wav), sr=INPUT_SAMPLES)
+        samples, sample_rate = librosa.load(join(join(TRAIN_AUDIO_PATH, '_background_noise_'), wav), sr=INPUT_SAMPLES)
         background_noise.append(samples)
 
-    dirs = [f for f in os.listdir(train_audio_path) if isdir(join(train_audio_path, f))]
+    dirs = [f for f in os.listdir(TRAIN_AUDIO_PATH) if isdir(join(TRAIN_AUDIO_PATH, f))]
     dirs.sort()
 
     wavs = []
     labels = []
     unknown_wavs = []
 
-    unknown_list = [d for d in dirs if d not in target_list and d != '_background_noise_']
+    unknown_list = [d for d in dirs if d not in TARGET_LIST and d != '_background_noise_']
     print('target_list : ', end='')
-    print(target_list)
+    print(TARGET_LIST)
     print('unknowns_list : ', end='')
     print(unknown_list)
     print('silence : _background_noise_')
@@ -96,11 +123,11 @@ def load_data_from_wavs():
     i = 0
     for directory in dirs[1:]:
         start = time.time()
-        waves = [f for f in os.listdir(join(train_audio_path, directory)) if f.endswith('.wav')]
+        waves = [f for f in os.listdir(join(TRAIN_AUDIO_PATH, directory)) if f.endswith('.wav')]
         i = i + 1
         print(str(i) + ":" + str(directory) + " ", end="", flush=True)
         for wav in waves:
-            samples, sample_rate = librosa.load(join(join(train_audio_path, directory), wav), sr=16000)
+            samples, sample_rate = librosa.load(join(join(TRAIN_AUDIO_PATH, directory), wav), sr=16000)
             samples = np.concatenate((np.zeros((INPUT_SAMPLES-8000)//2, dtype="float32"),
                                      samples[::2],
                                      np.zeros((INPUT_SAMPLES-8000)//2, dtype="float32")))
@@ -121,8 +148,6 @@ def load_data_from_wavs():
 
     cnt = len(wavs) * (NOISE_MULTIPLIER + 1) + UNKNOWN_COUNT + SILENCE_COUNT
     X = np.zeros((cnt, INPUT_SAMPLES), dtype="float32")
-    X_fft = np.zeros((cnt, FFT_SHAPE), dtype="float32")
-    X_dht = np.zeros((cnt, DHT_SHAPE), dtype="float32")
     Y = np.zeros((cnt, 1), dtype="int32")
 
     def get_one_noise():
@@ -152,112 +177,112 @@ def load_data_from_wavs():
         X[acc + i] = get_one_noise() * .5
         Y[acc + i] = label_to_id("silence")
 
-
-    for i in range(cnt):
-        X_fft[i] = np.abs(np.fft.rfft(X[i]))
-        #X_dht[i] = dht(X[i])
+    Xs = []
+    for transform in transforms:
+        Xs.append(np.zeros((cnt, transform.size), dtype="float32"))
+        for i in range(cnt):
+            Xs[-1][i] = transform.calc(X[i])
 
 
 
     print(h.heap())
-    return X, X_fft, X_dht, Y
+    return X, Y, Xs
 
 
-xfile = "x.npy"
-xfftfile = "xfft.npy"
-xdhtfile = "xdht.npy"
-yfile = "y.npy"
-try:
-    X = np.load(xfile)
-    X_fft = np.load(xfftfile)
-    X_dht = np.load(xdhtfile)
-    Y = np.load(yfile)
-    print("Loading arrays from file")
-except:
-    X, X_fft, X_dht, Y = load_data_from_wavs()
-    np.save(xfile, X)
-    np.save(yfile, Y)
-    np.save(xdhtfile, X_dht)
-    np.save(xfftfile, X_fft)
+if __name__ == "__main__":
+    applied_transforms = []
+    for i in range(1, len(sys.argv)):
+        applied_transforms.extend(tr for tr in transforms if tr.name==sys.argv[i])
+
+    print("Used transforms:", applied_transforms)
+
+    xfile = "x.npy"
+    yfile = "y.npy"
+    try:
+        X = np.load(xfile)
+        Y = np.load(yfile)
+        Xs = []
+        for transform in applied_transforms:
+            Xs.append(np.load(transform.filename))
+        print("Loading arrays from file")
+    except:
+        X, Y, Xs = load_data_from_wavs(applied_transforms)
+        np.save(xfile, X)
+        np.save(yfile, Y)
+        for i, transform in enumerate(applied_transforms):
+            np.save(transform.filename, Xs[i])
+
+    shuffle(X, Y, *Xs)
+
+    # For Conv1D add Channel
+    X = X.reshape((-1, INPUT_SAMPLES, 1))
+    for i, transform in enumerate(applied_transforms):
+        Xs[i] = Xs[i].reshape((-1, transform.size, 1))
+
+    # Make Label data 'class num' -> 'One hot vector'
+    Y = keras.utils.to_categorical(Y, len(TARGET_LIST) + 2)
 
 
-shuffle(X, X_fft, X_dht, Y)
+    # Conv1D Model
+    input_x = Input(shape=(INPUT_SAMPLES, 1))
+    x = layers.Conv1D(8, 11, padding='valid', activation='relu', strides=1)(input_x)
+    x = layers.MaxPooling1D(2)(x)
+    x = layers.Dropout(DROPOUT_RATE)(x)
+    x = layers.Conv1D(16, 7, padding='valid', activation='relu', strides=1)(x)
+    x = layers.MaxPooling1D(2)(x)
+    x = layers.Dropout(DROPOUT_RATE)(x)
+    x = layers.Conv1D(32, 5, padding='valid', activation='relu', strides=1)(x)
+    x = layers.MaxPooling1D(2)(x)
+    x = layers.Dropout(DROPOUT_RATE)(x)
+    x = layers.Conv1D(64, 5, padding='valid', activation='relu', strides=1)(x)
+    x = layers.MaxPooling1D(2)(x)
+    x = layers.Dropout(DROPOUT_RATE)(x)
+    x = layers.Conv1D(128, 3, padding='valid', activation='relu', strides=1)(x)
+    x = layers.MaxPooling1D(2)(x)
+    x = layers.Flatten()(x)
 
-# Parameters
-lr = 0.001
-generations = 20000
-batch_size = 256
-drop_out_rate = 0.5
+    input_tensors = [input_x,]
+    transform_tensors = [x,]
 
-# For Conv1D add Channel
-X = X.reshape((-1, INPUT_SAMPLES, 1))
-X_fft = X_fft.reshape((-1, FFT_SHAPE, 1))
-X_dht = X_dht.reshape((-1, DHT_SHAPE, 1))
+    for transform in applied_transforms:
+        input_xtr, x_tr = generate_convolution(transform.size)
+        input_tensors.append(input_xtr)
+        transform_tensors.append(x_tr)
 
+    if len(applied_transforms) > 0:
+        x = keras.layers.Concatenate()(transform_tensors)
+    x = layers.Dense(256, activation='relu')(x)
+    x = layers.Dropout(DROPOUT_RATE)(x)
+    x = layers.Dense(128, activation='relu')(x)
+    x = layers.Dropout(DROPOUT_RATE)(x)
+    output_tensor = layers.Dense(OUTPUTS, activation='softmax')(x)
 
-# Make Label data 'class num' -> 'One hot vector'
-Y = keras.utils.to_categorical(Y, len(target_list)+2)
+    model = tf.keras.Model(inputs=input_tensors, outputs=[output_tensor,])
 
-
-# Conv1D Model
-input_x = Input(shape=(INPUT_SAMPLES, 1))
-x = layers.Conv1D(8, 11, padding='valid', activation='relu', strides=1)(input_x)
-x = layers.MaxPooling1D(2)(x)
-x = layers.Dropout(drop_out_rate)(x)
-x = layers.Conv1D(16, 7, padding='valid', activation='relu', strides=1)(x)
-x = layers.MaxPooling1D(2)(x)
-x = layers.Dropout(drop_out_rate)(x)
-x = layers.Conv1D(32, 5, padding='valid', activation='relu', strides=1)(x)
-x = layers.MaxPooling1D(2)(x)
-x = layers.Dropout(drop_out_rate)(x)
-x = layers.Conv1D(64, 5, padding='valid', activation='relu', strides=1)(x)
-x = layers.MaxPooling1D(2)(x)
-x = layers.Dropout(drop_out_rate)(x)
-x = layers.Conv1D(128, 3, padding='valid', activation='relu', strides=1)(x)
-x = layers.MaxPooling1D(2)(x)
-x = layers.Flatten()(x)
-
-input_xfft, x_fft = generate_convolution(DHT_SHAPE)
-
-x = keras.layers.Concatenate()([x, x_fft])
-
-x = layers.Dense(256, activation='relu')(x)
-x = layers.Dropout(drop_out_rate)(x)
-x = layers.Dense(128, activation='relu')(x)
-x = layers.Dropout(drop_out_rate)(x)
-output_tensor = layers.Dense(OUTPUTS, activation='softmax')(x)
-
-model = tf.keras.Model(inputs=[input_x, input_xfft
-                               ], outputs=[output_tensor,])
-
-model.compile(loss=keras.losses.categorical_crossentropy,
-              optimizer=keras.optimizers.Adam(lr=lr),
-              metrics=['accuracy'])
+    model.compile(loss=keras.losses.categorical_crossentropy,
+                  optimizer=keras.optimizers.Adam(lr=LEARNING_RATE),
+                  metrics=['accuracy'])
 
 
-model.summary()
+    model.summary()
 
 
-history = model.fit([X, X_dht
-                      ], Y,
-                    validation_split=VALID_SPLIT,
-                    batch_size=batch_size,
-                    epochs=100,
-                    verbose=1)
+    history = model.fit([X, *Xs], Y, validation_split=VALID_SPLIT, batch_size=BATCH_SIZE,
+                        epochs=EPOCHS, verbose=1)
 
 
-plt.plot(history.history['acc'])
-plt.plot(history.history['val_acc'])
-plt.title('model accuracy')
-plt.ylabel('accuracy')
-plt.xlabel('epoch')
-plt.legend(['train', 'test'], loc='upper left')
-plt.show()
-# summarize history for loss
-plt.plot(history.history['loss'])
-plt.plot(history.history['val_loss'])
-plt.title('model loss')
-plt.ylabel('loss')
-plt.xlabel('epoch')
-plt.legend(['train', 'test'], loc='upper left')
-plt.show()
+    plt.plot(history.history['acc'])
+    plt.plot(history.history['val_acc'])
+    plt.title('model accuracy')
+    plt.ylabel('accuracy')
+    plt.xlabel('epoch')
+    plt.legend(['train', 'test'], loc='upper left')
+    plt.show()
+    # summarize history for loss
+    plt.plot(history.history['loss'])
+    plt.plot(history.history['val_loss'])
+    plt.title('model loss')
+    plt.ylabel('loss')
+    plt.xlabel('epoch')
+    plt.legend(['train', 'test'], loc='upper left')
+    plt.show()
