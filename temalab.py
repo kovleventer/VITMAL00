@@ -5,7 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import tensorflow as tf
 import tensorflow.keras as keras
-from tensorflow.keras import Input, layers
+from tensorflow.keras import Input, layers, callbacks
 from guppy import hpy
 import random
 import copy
@@ -13,6 +13,7 @@ import librosa
 import time
 import math
 import sys
+import scipy.fftpack
 h = hpy()
 
 
@@ -34,6 +35,8 @@ LEARNING_RATE = 0.001
 BATCH_SIZE = 256
 EPOCHS = 100
 DROPOUT_RATE = 0.5
+
+PATIENCE = 40
 
 class Transform:
     def __init__(self, name, filename, size):
@@ -65,8 +68,15 @@ class DHT(Transform):
             DHT.DHT_MTX = np.cos(2 * math.pi * args) + np.sin(2 * math.pi * args)
         return np.dot(DHT.DHT_MTX, array)
 
+class DCT(Transform):
+    def __init__(self):
+        Transform.__init__(self, "dct", "xdct.npy", INPUT_SAMPLES)
 
-transforms = [FFT(), DHT()]
+    def calc(self, array):
+        return scipy.fftpack.dct(array)
+
+
+transforms = [FFT(), DHT(), DCT()]
 
 
 
@@ -131,12 +141,8 @@ def load_data_from_wavs(transforms):
             samples = np.concatenate((np.zeros((INPUT_SAMPLES-8000)//2, dtype="float32"),
                                      samples[::2],
                                      np.zeros((INPUT_SAMPLES-8000)//2, dtype="float32")))
-            # samples1 = librosa.resample(samples, sample_rate, 8000)
-            # retek = samples2 - samples1
             if len(samples) != INPUT_SAMPLES:
                 continue
-
-
 
             if directory in unknown_list:
                 unknown_wavs.append(samples)
@@ -222,6 +228,11 @@ if __name__ == "__main__":
     # Make Label data 'class num' -> 'One hot vector'
     Y = keras.utils.to_categorical(Y, len(TARGET_LIST) + 2)
 
+    # Callbacks
+
+    early_stopping = callbacks.EarlyStopping(patience=PATIENCE, verbose=1)
+    checkpoint = callbacks.ModelCheckpoint(filepath="weights.hdf5", save_best_only=True, verbose=1)
+
 
     # Conv1D Model
     input_x = Input(shape=(INPUT_SAMPLES, 1))
@@ -268,7 +279,10 @@ if __name__ == "__main__":
 
 
     history = model.fit([X, *Xs], Y, validation_split=VALID_SPLIT, batch_size=BATCH_SIZE,
-                        epochs=EPOCHS, verbose=1)
+                        epochs=EPOCHS, callbacks=[early_stopping, checkpoint], verbose=1)
+
+    model.load_weights("weights.hdf5")
+    print(model.evaluate([X, *Xs], Y))
 
 
     plt.plot(history.history['acc'])
