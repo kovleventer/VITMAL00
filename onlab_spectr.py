@@ -248,9 +248,9 @@ if __name__ == "__main__":
 
     input_x = Input(shape=(129, 36, 1))
     x = layers.BatchNormalization()(input_x)
-    x = layers.Conv2D(32, (7, 3), padding='valid', activation='relu', strides=1)(x)
+    x = layers.SeparableConv2D(32, (7, 3), padding='valid', activation='relu', strides=1)(x)
     x = layers.MaxPooling2D((2, 2))(x)
-    x = layers.Conv2D(32, (7, 3), padding='valid', activation='relu', strides=1)(x)
+    x = layers.SeparableConv2D(32, (7, 3), padding='valid', activation='relu', strides=1)(x)
     x = layers.MaxPooling2D((2, 2))(x)
     x = layers.Flatten()(x)
     x = layers.Dense(128, activation='relu')(x)
