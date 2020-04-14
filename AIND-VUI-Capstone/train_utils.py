@@ -32,7 +32,7 @@ def add_ctc_loss(input_to_softmax):
 def train_model(input_to_softmax, 
                 pickle_path,
                 save_model_path,
-                train_json='train_corpus.json',
+                train_json='train_100_corpus.json',
                 valid_json='valid_corpus.json',
                 minibatch_size=20,
                 spectrogram=True,

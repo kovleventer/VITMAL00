@@ -2,7 +2,7 @@ from keras import backend as K
 from keras.models import Model
 from keras.optimizers import Adam
 from keras.layers import (BatchNormalization, Conv1D, Dense, Input, 
-    TimeDistributed, Activation, Bidirectional, SimpleRNN, GRU, LSTM, SeparableConv1D)
+    TimeDistributed, Activation, Bidirectional, SimpleRNN, GRU, LSTM, SeparableConv1D, ReLU, Add, Dropout)
 
 def simple_rnn_model(input_dim, output_dim=29):
     """ Build a recurrent network for speech 
@@ -216,5 +216,39 @@ def model_deep_bidir_deep_sepconv(input_dim, filters, kernel_size, conv_stride,
     model = Model(inputs=input_data, outputs=y_pred)
     # TODO: Specify model.output_length
     model.output_length = lambda x: cnn_output_length(cnn_output_length(x, kernel_size, conv_border_mode, conv_stride), kernel_size, conv_border_mode, conv_stride)
+    print(model.summary())
+    return model
+
+def jasper_model(input_dim, output_dim=29, R=3, B=5):
+    input_data = Input(name='the_input', shape=(None, input_dim))
+    conv_prolog = Conv1D(256, 11, strides=2, padding="same")(input_data)
+    conv_prolog = BatchNormalization()(conv_prolog)
+    conv_prolog = ReLU()(conv_prolog)
+
+    x = conv_prolog
+    for b in range(B):
+        before_r = x
+        for r in range(R):
+            x = Conv1D(256 + 128 * b, 9 + 2 * b if b != 0 else 11, strides=2, padding="same")(x)
+            x = BatchNormalization()(x)
+            if r == R-1:
+                before_r = Conv1D(256 + 128*b, 1, padding="same")(before_r)
+                before_r = BatchNormalization()(before_r)
+                x = Add()([x, before_r])
+            x = ReLU()(x)
+            x = Dropout(0.3)(x)
+    conv_epilog = Conv1D(896, 29, padding="same", dilation_rate=2)(x)
+    conv_epilog = BatchNormalization()(conv_epilog)
+    conv_epilog = ReLU()(conv_epilog)
+
+    conv_next = Conv1D(1024, 1, padding="same")(conv_epilog)
+    conv_next = BatchNormalization()(conv_next)
+    conv_next = ReLU()(conv_next)
+
+    conv_final = Conv1D(output_dim, 1, padding="same")(conv_next)
+    y_pred = Activation('softmax', name='softmax')(conv_final)
+
+    model = Model(inputs=input_data, outputs=y_pred)
+    model.output_length = lambda x: x
     print(model.summary())
     return model
