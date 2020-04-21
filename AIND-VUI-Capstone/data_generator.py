@@ -19,7 +19,7 @@ RNG_SEED = 123
 
 class AudioGenerator():
     def __init__(self, step=10, window=20, max_freq=8000, mfcc_dim=13,
-        minibatch_size=20, desc_file=None, spectrogram=True, max_duration=10.0, 
+        minibatch_size=20, desc_file=None, spectrogram=True, max_duration=10.0, min_duration=0.0,
         sort_by_duration=False):
         """
         Params:
@@ -46,6 +46,7 @@ class AudioGenerator():
         self.cur_valid_index = 0
         self.cur_test_index = 0
         self.max_duration=max_duration
+        self.min_duration=min_duration
         self.minibatch_size = minibatch_size
         self.spectrogram = spectrogram
         self.sort_by_duration = sort_by_duration
@@ -190,7 +191,7 @@ class AudioGenerator():
             for line_num, json_line in enumerate(json_line_file):
                 try:
                     spec = json.loads(json_line)
-                    if float(spec['duration']) > self.max_duration:
+                    if float(spec['duration']) > self.max_duration or float(spec['duration']) < self.min_duration:
                         continue
                     audio_paths.append(spec['key'])
                     durations.append(float(spec['duration']))

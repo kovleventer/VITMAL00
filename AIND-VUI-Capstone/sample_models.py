@@ -219,9 +219,9 @@ def model_deep_bidir_deep_sepconv(input_dim, filters, kernel_size, conv_stride,
     print(model.summary())
     return model
 
-def jasper_model(input_dim, output_dim=29, R=3, B=5):
+def jasper_model(input_dim, output_dim=29, R=2, B=3):
     input_data = Input(name='the_input', shape=(None, input_dim))
-    conv_prolog = Conv1D(256, 11, strides=2, padding="same")(input_data)
+    conv_prolog = Conv1D(256, 11, strides=1, padding="same")(input_data)
     conv_prolog = BatchNormalization()(conv_prolog)
     conv_prolog = ReLU()(conv_prolog)
 
@@ -229,7 +229,7 @@ def jasper_model(input_dim, output_dim=29, R=3, B=5):
     for b in range(B):
         before_r = x
         for r in range(R):
-            x = Conv1D(256 + 128 * b, 9 + 2 * b if b != 0 else 11, strides=2, padding="same")(x)
+            x = Conv1D(256 + 128 * b, 9 + 2 * b if b != 0 else 11, padding="same")(x)
             x = BatchNormalization()(x)
             if r == R-1:
                 before_r = Conv1D(256 + 128*b, 1, padding="same")(before_r)
@@ -237,7 +237,7 @@ def jasper_model(input_dim, output_dim=29, R=3, B=5):
                 x = Add()([x, before_r])
             x = ReLU()(x)
             x = Dropout(0.3)(x)
-    conv_epilog = Conv1D(896, 29, padding="same", dilation_rate=2)(x)
+    conv_epilog = Conv1D(896, 19, padding="same", dilation_rate=2)(x)
     conv_epilog = BatchNormalization()(conv_epilog)
     conv_epilog = ReLU()(conv_epilog)
 
@@ -246,9 +246,45 @@ def jasper_model(input_dim, output_dim=29, R=3, B=5):
     conv_next = ReLU()(conv_next)
 
     conv_final = Conv1D(output_dim, 1, padding="same")(conv_next)
+    #conv_final = Concatenate()([conv_final, conv_final])
+    
     y_pred = Activation('softmax', name='softmax')(conv_final)
 
     model = Model(inputs=input_data, outputs=y_pred)
     model.output_length = lambda x: x
+    print(model.summary())
+    return model
+
+def quartznet_model(input_dim, output_dim=29, R=2, B=3):
+    input_data = Input(name='the_input', shape=(None, input_dim))
+    conv_prolog = SeparableConv1D(256, 33, strides=2, padding="same")(input_data)
+    conv_prolog = BatchNormalization()(conv_prolog)
+    conv_prolog = ReLU()(conv_prolog)
+
+    x = conv_prolog
+    for b in range(B):
+        before_r = x
+        for r in range(R):
+            x = SeparableConv1D(256, 33, padding="same")(x)
+            x = BatchNormalization()(x)
+            if r == R - 1:
+                before_r = SeparableConv1D(256, 1, padding="same")(before_r)
+                before_r = BatchNormalization()(before_r)
+                x = Add()([x, before_r])
+            x = ReLU()(x)
+
+    conv_epilog = SeparableConv1D(512, 51, padding="same")(x)
+    conv_epilog = BatchNormalization()(conv_epilog)
+    conv_epilog = ReLU()(conv_epilog)
+
+    conv_next = SeparableConv1D(1024, 1, padding="same")(conv_epilog)
+    conv_next = BatchNormalization()(conv_next)
+    conv_next = ReLU()(conv_next)
+
+    conv_final = SeparableConv1D(output_dim, 1, padding="same", dilation_rate=2)(conv_next)
+
+    y_pred = Activation('softmax', name='softmax')(conv_final)
+    model = Model(inputs=input_data, outputs=y_pred)
+    model.output_length = lambda x: x/2
     print(model.summary())
     return model
