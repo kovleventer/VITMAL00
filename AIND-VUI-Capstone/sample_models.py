@@ -288,3 +288,68 @@ def quartznet_model(input_dim, output_dim=29, R=2, B=3):
     model.output_length = lambda x: x/2
     print(model.summary())
     return model
+
+def sep1d_bn_relu(x, filters, kernel_size, strides=1, dilation_rate=1, padding="same"):
+    x = SeparableConv1D(filters, kernel_size, strides=strides, dilation_rate=dilation_rate, padding=padding)(x)
+    x = BatchNormalization()(x)
+    x = ReLU()(x)
+    return x
+
+def quartznet_12x1(input_dim, output_dim=29):
+    # No bn and relu activations, so probably not a good model
+    input_data = Input(name='the_input', shape=(None, input_dim))
+    x = input_data
+    x = sep1d_bn_relu(x, 256, 33, strides=2, dilation_rate=1, padding="same")
+    x = sep1d_bn_relu(x, 256, 33, strides=1, dilation_rate=1, padding="same")
+    x = sep1d_bn_relu(x, 256, 33, strides=1, dilation_rate=1, padding="same")
+    x = sep1d_bn_relu(x, 256, 33, strides=1, dilation_rate=1, padding="same")
+    x = sep1d_bn_relu(x, 256, 33, strides=1, dilation_rate=1, padding="same")
+
+    x = sep1d_bn_relu(x, 256, 39, strides=1, dilation_rate=1, padding="same")
+    x = sep1d_bn_relu(x, 256, 39, strides=1, dilation_rate=1, padding="same")
+    x = sep1d_bn_relu(x, 256, 39, strides=1, dilation_rate=1, padding="same")
+
+    x = sep1d_bn_relu(x, 512, 51, strides=1, dilation_rate=1, padding="same")
+    x = sep1d_bn_relu(x, 512, 51, strides=1, dilation_rate=1, padding="same")
+    x = sep1d_bn_relu(x, 512, 51, strides=1, dilation_rate=1, padding="same")
+
+    x = sep1d_bn_relu(x, 512, 63, strides=1, dilation_rate=1, padding="same")
+    x = sep1d_bn_relu(x, 512, 63, strides=1, dilation_rate=1, padding="same")
+    x = sep1d_bn_relu(x, 512, 63, strides=1, dilation_rate=1, padding="same")
+
+    x = sep1d_bn_relu(x, 512, 75, strides=1, dilation_rate=1, padding="same")
+    x = sep1d_bn_relu(x, 1024, 1, strides=1, dilation_rate=1, padding="same")
+
+    conv_final = SeparableConv1D(output_dim, 1, padding="same", dilation_rate=2)(x)
+    y_pred = Activation('softmax', name='softmax')(conv_final)
+    model = Model(inputs=input_data, outputs=y_pred)
+    model.output_length = lambda x: x / 2
+    print(model.summary())
+    return model
+
+
+
+def quartznet_15x5(input_dim, output_dim=29):
+    input_data = Input(name='the_input', shape=(None, input_dim))
+    x = input_data
+    x = sep1d_bn_relu(x, 256, 33, strides=2, dilation_rate=1, padding="same")
+    for _ in range(15):
+        x = sep1d_bn_relu(x, 256, 33, strides=1, dilation_rate=1, padding="same")
+    for _ in range(15):
+        x = sep1d_bn_relu(x, 256, 39, strides=1, dilation_rate=1, padding="same")
+    for _ in range(15):
+        x = sep1d_bn_relu(x, 512, 51, strides=1, dilation_rate=1, padding="same")
+    for _ in range(15):
+        x = sep1d_bn_relu(x, 512, 63, strides=1, dilation_rate=1, padding="same")
+    for _ in range(15):
+        x = sep1d_bn_relu(x, 512, 75, strides=1, dilation_rate=1, padding="same")
+    x = sep1d_bn_relu(x, 512, 87, strides=1, dilation_rate=2, padding="same")
+    x = sep1d_bn_relu(x, 1024, 1, strides=1, dilation_rate=1, padding="same")
+    conv_final = SeparableConv1D(output_dim, 1, padding="same", dilation_rate=2)(x)
+    y_pred = Activation('softmax', name='softmax')(conv_final)
+    model = Model(inputs=input_data, outputs=y_pred)
+    model.output_length = lambda x: x / 2
+    print(model.summary())
+    return model
+
+
