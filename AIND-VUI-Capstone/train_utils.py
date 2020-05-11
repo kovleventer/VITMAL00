@@ -9,7 +9,7 @@ from keras import backend as K
 from keras.models import Model
 from keras.layers import (Input, Lambda)
 from keras.optimizers import SGD
-from keras.callbacks import ModelCheckpoint   
+from keras.callbacks import ModelCheckpoint, Callback
 import os
 
 def ctc_lambda_func(args):
@@ -29,6 +29,20 @@ def add_ctc_loss(input_to_softmax):
         outputs=loss_out)
     return model
 
+class WERCallback(Callback):
+    def __init__(self, wercb, input_to_softmax, save_model_path):
+        super().__init__()
+        self.wercb = wercb
+        self.its = input_to_softmax
+        self.smp = save_model_path
+
+    def on_epoch_end(self, epoch, logs=None):
+        if epoch % 10 == 0:
+            print("EPOCH,", epoch)
+            self.wercb(self.its, self.smp, True)
+            self.wercb(self.its, self.smp, False)
+
+
 def train_model(input_to_softmax, 
                 pickle_path,
                 save_model_path,
@@ -42,7 +56,7 @@ def train_model(input_to_softmax,
                 verbose=1,
                 sort_by_duration=False,
                 max_duration=10.0,
-               min_duration=0):
+               min_duration=0, wer=None):
     if not optimizer:
         optimizer = SGD(lr=0.02, decay=1e-6, momentum=0.9, nesterov=True, clipnorm=5)
 
@@ -72,11 +86,16 @@ def train_model(input_to_softmax,
 
     # add checkpointer
     checkpointer = ModelCheckpoint(filepath='results/'+save_model_path, verbose=0)
+    
+    cbs = [checkpointer]
+    if wer:
+        print("added wer cb")
+        cbs.append(WERCallback(wer, input_to_softmax, 'results/'+save_model_path))
 
     # train the model
     hist = model.fit_generator(generator=audio_gen.next_train(), steps_per_epoch=steps_per_epoch,
         epochs=epochs, validation_data=audio_gen.next_valid(), validation_steps=validation_steps,
-        callbacks=[checkpointer], verbose=verbose)
+        callbacks=cbs, verbose=verbose)
 
     # save model loss
     with open('results/'+pickle_path, 'wb') as f:
