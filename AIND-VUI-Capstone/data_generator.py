@@ -312,7 +312,7 @@ def plot_raw_audio(vis_raw_audio):
 
 def plot_mfcc_feature(vis_mfcc_feature):
     # plot the MFCC feature
-    fig = plt.figure(figsize=(12,5))
+    fig = plt.figure(figsize=(12,8))
     ax = fig.add_subplot(111)
     im = ax.imshow(vis_mfcc_feature, cmap=plt.cm.jet, aspect='auto')
     plt.title('Normalized MFCC')
@@ -326,7 +326,7 @@ def plot_mfcc_feature(vis_mfcc_feature):
 
 def plot_spectrogram_feature(vis_spectrogram_feature):
     # plot the normalized spectrogram
-    fig = plt.figure(figsize=(12,5))
+    fig = plt.figure(figsize=(12,8))
     ax = fig.add_subplot(111)
     im = ax.imshow(vis_spectrogram_feature, cmap=plt.cm.jet, aspect='auto')
     plt.title('Normalized Spectrogram')

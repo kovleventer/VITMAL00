@@ -37,7 +37,7 @@ class WERCallback(Callback):
         self.smp = save_model_path
 
     def on_epoch_end(self, epoch, logs=None):
-        if epoch % 10 == 0:
+        if epoch % 10 == 9:
             print("EPOCH,", epoch)
             self.wercb(self.its, self.smp, True)
             self.wercb(self.its, self.smp, False)
@@ -46,7 +46,7 @@ class WERCallback(Callback):
 def train_model(input_to_softmax, 
                 pickle_path,
                 save_model_path,
-                train_json='train_100_corpus.json',
+                train_json='train_corpus.json',
                 valid_json='valid_corpus.json',
                 minibatch_size=20,
                 spectrogram=True,
@@ -56,7 +56,7 @@ def train_model(input_to_softmax,
                 verbose=1,
                 sort_by_duration=False,
                 max_duration=10.0,
-               min_duration=0, wer=None):
+               min_duration=0, wer=None, lratedecay=None):
     if not optimizer:
         optimizer = SGD(lr=0.02, decay=1e-6, momentum=0.9, nesterov=True, clipnorm=5)
 
@@ -91,6 +91,9 @@ def train_model(input_to_softmax,
     if wer:
         print("added wer cb")
         cbs.append(WERCallback(wer, input_to_softmax, 'results/'+save_model_path))
+    if lratedecay:
+        print("added learning rate decay cb")
+        cbs.append(lratedecay)
 
     # train the model
     hist = model.fit_generator(generator=audio_gen.next_train(), steps_per_epoch=steps_per_epoch,
