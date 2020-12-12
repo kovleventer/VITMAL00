@@ -1,0 +1,30 @@
+SGD default 5 epoch:
+    WER: 131.09090909090912
+    CER: 89.23943661971838
+    TLOSS: 122.7060
+    VLOSS: 141.2317
+
+Adam default 5 epoch:
+    WER: 137.0909090909091
+    CER: 78.76056338028172
+    TLOSS: 518.5661
+    VLOSS: 555.4882
+
+
+SGD default 10 epoch:
+    WER: ?
+    CER: ?
+    TLOSS: 89.1615
+    VLOSS: 115.2081
+
+SGD default 10 epoch:
+    WER: 92.58114931
+    CER: 46.20462827
+    TLOSS: 291.8702
+    VLOSS: 303.3233
+
+SGD shallow 10 epoch
+    WER: 55.2876
+    CER: 20.6837
+    TLOSS: 86.4267
+    VLOSS: 116.2402

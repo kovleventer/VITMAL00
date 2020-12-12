@@ -29,24 +29,11 @@ def add_ctc_loss(input_to_softmax):
         outputs=loss_out)
     return model
 
-class WERCallback(Callback):
-    def __init__(self, wercb, input_to_softmax, save_model_path):
-        super().__init__()
-        self.wercb = wercb
-        self.its = input_to_softmax
-        self.smp = save_model_path
 
-    def on_epoch_end(self, epoch, logs=None):
-        if epoch % 10 == 9:
-            print("EPOCH,", epoch)
-            self.wercb(self.its, self.smp, True)
-            self.wercb(self.its, self.smp, False)
-
-
-def train_model(input_to_softmax, 
+def train_model(input_to_softmax,
                 pickle_path,
                 save_model_path,
-                train_json='train_corpus.json',
+                train_json='train_100_corpus.json',
                 valid_json='valid_corpus.json',
                 minibatch_size=20,
                 spectrogram=True,
@@ -56,7 +43,9 @@ def train_model(input_to_softmax,
                 verbose=1,
                 sort_by_duration=False,
                 max_duration=10.0,
-               min_duration=0, wer=None, lratedecay=None):
+                min_duration=0, cbs=None):
+    if cbs is None:
+        cbs = []
     if not optimizer:
         optimizer = SGD(lr=0.02, decay=1e-6, momentum=0.9, nesterov=True, clipnorm=5)
 
@@ -87,13 +76,7 @@ def train_model(input_to_softmax,
     # add checkpointer
     checkpointer = ModelCheckpoint(filepath='results/'+save_model_path, verbose=0)
     
-    cbs = [checkpointer]
-    if wer:
-        print("added wer cb")
-        cbs.append(WERCallback(wer, input_to_softmax, 'results/'+save_model_path))
-    if lratedecay:
-        print("added learning rate decay cb")
-        cbs.append(lratedecay)
+    cbs.insert(0, checkpointer)
 
     # train the model
     hist = model.fit_generator(generator=audio_gen.next_train(), steps_per_epoch=steps_per_epoch,

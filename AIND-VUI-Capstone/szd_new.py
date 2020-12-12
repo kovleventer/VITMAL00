@@ -1,3 +1,26 @@
+seed_value= 0
+#1. Set `PYTHONHASHSEED` environment variable at a fixed value
+import os
+os.environ['PYTHONHASHSEED']=str(seed_value)
+#os.environ["CUDA_VISIBLE_DEVICES"]="-1"
+# 2. Set `python` built-in pseudo-random generator at a fixed value
+import random
+random.seed(seed_value)
+# 3. Set `numpy` pseudo-random generator at a fixed value
+import numpy as np
+np.random.seed(seed_value)
+# 4. Set the `tensorflow` pseudo-random generator at a fixed value
+import tensorflow as tf
+#tf.random.set_seed(seed_value)
+# for later versions:
+tf.random.set_random_seed(seed_value)
+tf.compat.v1.set_random_seed(seed_value)
+# 5. Configure a new global `tensorflow` session
+from keras import backend as K
+session_conf = tf.ConfigProto(intra_op_parallelism_threads=1, inter_op_parallelism_threads=1)
+sess = tf.Session(graph=tf.get_default_graph(), config=session_conf)
+K.set_session(sess)
+
 # allocate 50% of GPU memory (if you like, feel free to change this)
 import tensorflow as tf
 from keras.callbacks import LearningRateScheduler
@@ -6,6 +29,8 @@ print(tf.__version__)
 from keras.backend.tensorflow_backend import set_session
 from keras.optimizers import SGD
 import math
+from adamw import AdamW
+from wer_k import calculate_wer2
 
 
 config = tf.compat.v1.ConfigProto()
@@ -22,39 +47,15 @@ from wer import wer
 from data_generator import AudioGenerator
 from keras import backend as K
 from utils import int_sequence_to_text
-import numpy as np
+
+from keras.optimizers import Nadam, Adagrad
 
 
-def calculate_wer2(input_to_softmax, model_path, words=False):
-    data_gen = AudioGenerator()
-    data_gen.load_train_data()
-    data_gen.load_validation_data()
-    wers = []
-    for index in range(len(data_gen.valid_texts)):
-        transcr = data_gen.valid_texts[index]
-        audio_path = data_gen.valid_audio_paths[index]
-        data_point = data_gen.normalize(data_gen.featurize(audio_path))
-
-        input_to_softmax.load_weights(model_path)
-        prediction = input_to_softmax.predict(np.expand_dims(data_point, axis=0))
-        output_length = [input_to_softmax.output_length(data_point.shape[0])]
-        pred_ints = (K.eval(K.ctc_decode(
-            prediction, output_length)[0][0]) + 1).flatten().tolist()
-
-        pred = ''.join(int_sequence_to_text(pred_ints))
-
-        if words:
-            w = wer(transcr.split(), pred.split())
-        else:
-            w = wer(list(transcr), list(pred))
-        wers.append(w)
-        if index % 100 == 0:
-            print(index, len(data_gen.valid_texts), wers[-1])
-
-    print("FINAL WER:", sum(wers) / len(wers), "words:", words)
+from wer_k import WERCallback
+from cosine_annealing import *
 
 initial_lrate = 0.02
-epochs = 20
+epochs = 10
 
 def exp_decay(t):
    k = 0.1
@@ -114,21 +115,43 @@ def get_predictions(index, partition, input_to_softmax, model_path):
     print('Predicted transcription:\n' + '\n' + ''.join(int_sequence_to_text(pred_ints)))
     print('-' * 80)
 
+MODEL_NAME = "quartznet_12x1_15_39"
 
-get_predictions(index=0,
-                partition='validation',
-                input_to_softmax=quartznet_12x1_15_39(161),
-                model_path='results/quartz_1212151.h5')
+#calculate_wer2(input_to_softmax=quartznet_12x1_15_39(161), model_path='results/quartznet_12x1_15_39.h5', words=True)
+#calculate_wer2(input_to_softmax=quartznet_12x1_15_39(161), model_path='results/quartznet_12x1_15_39.h5', words=False)
 #exit()
 
-quartz_1212151 = quartznet_12x1_15_39(161)
-train_model(input_to_softmax=quartz_1212151,
-            pickle_path='quartz_1212151.pickle',
-            save_model_path='quartz_1212151.h5',
-            spectrogram=True, min_duration=10.0, max_duration=10000., minibatch_size=5, wer=None, epochs=epochs,
-           # optimizer=Adam(lr=initial_lrate),
-            #optimizer=SGD(lr=initial_lrate, momentum=0.9, nesterov=True, clipnorm=5),
-            #lratedecay=LearningRateScheduler(step_decay)
-)
+#get_predictions(1, "validation", quartznet_12x1_15_39(161), "results/quartznet_12x1_15_39.h5")
+#get_predictions(2, "validation", quartznet_12x1_15_39(161), "results/quartznet_12x1_15_39.h5")
+#get_predictions(3, "validation", quartznet_12x1_15_39(161), "results/quartznet_12x1_15_39.h5")
+#get_predictions(4, "validation", quartznet_12x1_15_39(161), "results/quartznet_12x1_15_39.h5")
+
+#exit()
+
+for lrate in [
+    #0.025, 0.022,
+    #0.018, 0.014,
+    # 0.010
+    0.02]:
+    quartz_1212151 = quartznet_12x1_15_39(161) # 161
+    #exit()
+    #quartz_1212151.load_weights("results/quartznet_12x1_15_39.h5")
+
+    #exit()
+    train_model(input_to_softmax=quartz_1212151,
+                pickle_path=MODEL_NAME + ".pickle",
+                save_model_path=MODEL_NAME + ".h5",
+                train_json='train_100_corpus.json',
+                spectrogram=True,
+                min_duration=10.0, max_duration=10000., minibatch_size=5, cbs=[
+            WERCallback(quartz_1212151, 'results/' + MODEL_NAME + '.h5'),
+            #LinearAnnealingScheduler(T_max=4, eta_max=initial_lrate, eta_min=1e-4)
+            ExponentionalAnnealingScheduler(T_max=4, eta_max=initial_lrate)
+        ],
+                epochs=epochs,
+                #optimizer=Adagrad(lr=lrate),
+                #optimizer=SGD(lr=0.001, decay=1e-6, momentum=0.9, nesterov=True, clipnorm=5),
+                #lratedecay=LearningRateScheduler(step_decay)
+    )
 
 
